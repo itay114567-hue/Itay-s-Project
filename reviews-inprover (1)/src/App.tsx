@@ -275,19 +275,37 @@ export default function App() {
       .catch(() => showNotif("שגיאה בהתחברות לגוגל", "#EF4444"));
   }, []);
 
-  // ── Fetch Google Business Accounts ──
+  // ── Fetch Google Business Accounts (with session cache) ──
   const fetchBusinessAccounts = async (token: string) => {
+    // Check session cache first
+    const cached = sessionStorage.getItem("gbp_location");
+    if (cached) {
+      setLocationId(cached);
+      return;
+    }
+
+    // Wait 2s to avoid 429
+    await new Promise((r) => setTimeout(r, 2000));
+
     try {
       const res = await fetch(
         "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
         { headers: { Authorization: `Bearer ${token}` } }
       );
+
+      if (res.status === 429) {
+        showNotif("⏳ Google API עמוס — נסה שוב בעוד דקה", "#F59E0B");
+        return;
+      }
+
       const data = await res.json();
       const accounts = data.accounts || [];
       if (accounts.length > 0) {
-        const aid = accounts[0].name; // e.g. "accounts/123456"
+        const aid = accounts[0].name;
         setAccountId(aid);
-        fetchLocations(token, aid);
+        await fetchLocations(token, aid);
+      } else {
+        showNotif("לא נמצאו עסקים מחוברים לחשבון זה", "#F59E0B");
       }
     } catch {
       showNotif("לא ניתן לטעון חשבונות עסקיים", "#EF4444");
@@ -301,11 +319,21 @@ export default function App() {
         `https://mybusinessbusinessinformation.googleapis.com/v1/${aid}/locations`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
+
+      if (res.status === 429) {
+        showNotif("⏳ Google API עמוס — נסה שוב בעוד דקה", "#F59E0B");
+        return;
+      }
+
       const data = await res.json();
       const locations = data.locations || [];
       if (locations.length > 0) {
-        const lid = locations[0].name; // e.g. "locations/789"
+        const lid = locations[0].name;
         setLocationId(lid);
+        // Cache for this session
+        sessionStorage.setItem("gbp_location", lid);
+      } else {
+        showNotif("לא נמצאו מיקומים לעסק", "#F59E0B");
       }
     } catch {
       showNotif("לא ניתן לטעון מיקומים", "#EF4444");
